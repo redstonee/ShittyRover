@@ -1,0 +1,108 @@
+cmake_minimum_required(VERSION 3.20)
+
+set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_LIST_DIR}/toolchain-arm-none-eabi.cmake)
+
+project(ShittyRover)
+set(OUTPUT_EXE_NAME ${CMAKE_PROJECT_NAME}.elf)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+enable_language(ASM)
+enable_language(C)
+enable_language(CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Set the directory for the source files
+set(CORE_DIR ${CMAKE_CURRENT_LIST_DIR}/Core)
+
+set(CMSIS_DIR ${CMAKE_CURRENT_LIST_DIR}/Drivers/CMSIS)
+set(CMSIS_DEVICE_DIR ${CMSIS_DIR}/Device/ST/STM32G4xx)
+
+set(FREERTOS_DIR ${CMAKE_CURRENT_LIST_DIR}/Middlewares/Third_Party/FreeRTOS/Source)
+set(HAL_DIR ${CMAKE_CURRENT_LIST_DIR}/Drivers/STM32G4xx_HAL_Driver)
+
+# Set the include directories
+include_directories(
+    ${CORE_DIR}/Inc
+    ${CMSIS_DIR}/Include
+    ${CMSIS_DEVICE_DIR}/Include
+    ${FREERTOS_DIR}/include
+    ${FREERTOS_DIR}/CMSIS_RTOS_V2
+    ${FREERTOS_DIR}/portable/GCC/ARM_CM4F
+    ${HAL_DIR}/Inc
+    ${HAL_DIR}/Inc/Legacy
+)
+
+# Set the source files
+file(GLOB CORE_SOURCES ${CORE_DIR}/Src/*.c ${CORE_DIR}/Src/*.cpp)
+file(GLOB FREERTOS_SOURCE 
+    ${FREERTOS_DIR}/*.c
+    ${FREERTOS_DIR}/portable/GCC/ARM_CM4F/port.c
+    ${FREERTOS_DIR}/portable/MemMang/heap_4.c
+    ${FREERTOS_DIR}/CMSIS_RTOS_V2/cmsis_os2.c
+
+)
+set(HAL_SOURCE 
+   ${HAL_DIR}/Src/stm32g4xx_hal_adc.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_adc_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_ll_adc.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_rcc.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_rcc_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_flash.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_flash_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_flash_ramfunc.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_gpio.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_exti.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_dma.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_dma_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_pwr.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_pwr_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_cortex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_i2c.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_i2c_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_spi.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_spi_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_tim.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_tim_ex.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_uart.c 
+   ${HAL_DIR}/Src/stm32g4xx_hal_uart_ex.c 
+)
+
+set(STARTUP_SRC ${CMAKE_CURRENT_LIST_DIR}/startup_stm32g431xx.s)
+
+set(LD_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/STM32G431CBUx_FLASH.ld)
+
+add_executable(${OUTPUT_EXE_NAME} ${STARTUP_SRC} ${CORE_SOURCES} ${HAL_SOURCE} ${FREERTOS_SOURCE})
+
+add_compile_definitions(
+    USE_HAL_DRIVER
+    STM32G431xx
+)
+
+set_target_properties(${OUTPUT_EXE_NAME} PROPERTIES 
+    LINK_DEPENDS ${LD_SCRIPT}
+    LINK_FLAGS "-T ${LD_SCRIPT}"
+)
+
+add_custom_target(
+        showSize ALL
+        ${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}-size "${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_EXE_NAME}"
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_EXE_NAME})
+
+
+find_program(PYOCD_FOUND pyocd)
+
+if(PYOCD_FOUND)
+        add_custom_target(BuildAndFlash COMMAND DEPENDS flash-cmd)
+        add_custom_command(
+                USES_TERMINAL 
+                OUTPUT flash-cmd
+                COMMAND pyocd load ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_EXE_NAME} -t STM32G431CBUx
+                DEPENDS showSize
+        )
+else()
+        message(WARNING "pyocd not found, flashing will not be available")
+endif()
